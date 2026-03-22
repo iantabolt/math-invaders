@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Math Invaders</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Kablammo&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0000;
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #sky {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: linear-gradient(to bottom,
+        #0a0005 0%, #1a0510 35%, #3d1205 65%,
+        #7a2a00 82%, #b84a10 92%, #d4621a 100%);
+    }
+
+    #stars {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    }
+
+    #hud {
+      position: relative;
+      z-index: 2;
+      width: 620px;
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0 4px;
+      font-size: 14px;
+      letter-spacing: 1px;
+      color: #ffb87a;
+      text-shadow: 0 0 8px #f84;
+    }
+
+    #hud #score {
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    #hud #high-score {
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    #problem-bar {
+      position: relative;
+      z-index: 2;
+      width: 620px;
+      text-align: center;
+      padding: 2px 0 6px;
+    }
+
+    #problem-label {
+      font-size: 12px;
+      color: #ffa060;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    #problem-text {
+      font-size: 44px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 0 14px #ff8833, 0 0 28px #ff4400;
+      letter-spacing: 4px;
+      transition: color 0.15s, text-shadow 0.15s;
+    }
+
+    #problem-text.correct-flash {
+      color: #aaff88;
+      text-shadow: 0 0 14px #44ff00, 0 0 30px #22cc00;
+    }
+
+    #problem-text.wrong-flash {
+      color: #ff4444;
+      text-shadow: 0 0 14px #ff0000, 0 0 30px #cc0000;
+    }
+
+    #game {
+      position: relative;
+      z-index: 2;
+      width: 620px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* ── Alien area: all cells independently positioned ── */
+    #alien-area {
+      position: relative;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #danger-glow {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 120px;
+      background: transparent;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    #wrong-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,0,0,0);
+      pointer-events: none;
+      z-index: 15;
+      transition: background 0.05s;
+    }
+
+    #wrong-overlay.flash { background: rgba(255,0,0,0.22); }
+
+    /* Each monster cell is absolutely placed by JS */
+    .alien-cell {
+      position: absolute;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 3px;
+      width: 180px;
+      cursor: pointer;
+      transform: translateX(-50%);  /* center on its left value */
+    }
+
+    .monster-digit {
+      display: block;
+      /* img mode: height set by JS; text mode: font-size set by JS */
+    }
+
+    /* Text fallback for monster digits */
+    .monster-digit-text {
+      font-family: 'Kablammo', cursive;
+      color: #44ff66;
+      font-size: 32px; /* overridden by JS */
+      text-align: center;
+      text-shadow: 0 0 8px #00ff44, 0 0 20px #00aa33;
+      line-height: 1;
+      width: 100%;
+    }
+
+    /* Blast projectile */
+    .blast-projectile {
+      position: absolute;
+      width: 13px;
+      height: auto;
+      z-index: 50;
+      pointer-events: none;
+      transform: translateX(-50%);
+    }
+
+    /* CSS fallback blast (no SVG) */
+    .blast-projectile:not(img) {
+      width: 4px;
+      height: 18px;
+      background: linear-gradient(to top, #ffff00, #ff8800);
+      border-radius: 2px;
+      box-shadow: 0 0 6px #ffcc00;
+    }
+
+    /* Hide cell while exploding */
+    .alien-cell.exploding {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Explosion sprite */
+    .blast-explosion {
+      position: absolute;
+      width: 110px;
+      height: 110px;
+      pointer-events: none;
+      z-index: 60;
+      animation: explosion-anim 0.5s ease-out forwards;
+    }
+
+    /* Emoji fallback explosion */
+    .blast-explosion:not(img) {
+      font-size: 72px;
+      line-height: 110px;
+      text-align: center;
+      width: 110px;
+      height: 110px;
+    }
+
+    @keyframes explosion-anim {
+      0%   { transform: translate(-50%,-50%) scale(0.1) rotate(0deg);   opacity: 1; }
+      40%  { transform: translate(-50%,-50%) scale(1.4) rotate(160deg); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scale(2.0) rotate(300deg); opacity: 0; }
+    }
+
+    /* Screen shake */
+    #game.screen-shake { animation: shake 0.18s ease-out; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25%       { transform: translateX(-5px); }
+      75%       { transform: translateX(5px); }
+    }
+
+    #ground {
+      position: relative;
+      z-index: 2;
+      width: 620px;
+      height: 14px;
+      background: linear-gradient(to bottom, #c85a10, #8a3500);
+      border-top: 2px solid #ff7733;
+      box-shadow: 0 -6px 24px rgba(220,90,10,0.7);
+      flex-shrink: 0;
+    }
+
+    #ship-row {
+      position: relative;
+      z-index: 2;
+      width: 620px;
+      height: 88px;
+      flex-shrink: 0;
+    }
+
+    #ship {
+      position: absolute;
+      bottom: 0;
+      transform: translateX(-50%);
+      left: 310px;
+      transition: left 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      filter: drop-shadow(0 0 8px rgba(100,200,255,0.6));
+    }
+
+    #ship.ship-emoji {
+      font-size: 64px;
+      line-height: 1;
+      bottom: 4px;
+      transform: translateX(-50%) rotate(-90deg);
+      user-select: none;
+    }
+
+    #ship.ship-svg {
+      height: 88px;
+      width: auto;
+    }
+
+    #overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    #overlay.visible { opacity: 1; }
+
+    #overlay-text {
+      font-size: 52px;
+      font-weight: bold;
+      color: #ff2200;
+      text-shadow: 0 0 20px #ff2200, 0 0 40px #ff0000;
+      letter-spacing: 6px;
+      text-align: center;
+      animation: pulse 0.6s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse {
+      from { transform: scale(1);    }
+      to   { transform: scale(1.06); }
+    }
+
+    #instructions {
+      position: relative;
+      z-index: 2;
+      font-size: 11px;
+      color: #a06030;
+      letter-spacing: 1px;
+      padding: 3px 0 6px;
+      flex-shrink: 0;
+    }
+
+    /* Score popup */
+    .score-popup {
+      position: absolute;
+      font-size: 30px;
+      font-weight: bold;
+      color: #aaff88;
+      text-shadow: 0 0 10px #44ff00, 0 0 20px #22cc00;
+      pointer-events: none;
+      z-index: 70;
+      transform: translateX(-50%);
+      animation: score-float 1s ease-out forwards;
+    }
+
+    @keyframes score-float {
+      0%   { opacity: 1; top: var(--start-top); }
+      100% { opacity: 0; top: calc(var(--start-top) - 70px); }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sky"></div>
+  <canvas id="stars"></canvas>
+
+  <div id="hud">
+    <span>SCORE: <strong id="score">0</strong></span>
+    <span>LEVEL <strong id="level">1</strong></span>
+    <span>BEST: <strong id="high-score">0</strong></span>
+  </div>
+
+  <div id="problem-bar">
+    <div id="problem-label">What is</div>
+    <div id="problem-text">– – –</div>
+  </div>
+
+  <div id="game">
+    <div id="alien-area">
+      <div id="danger-glow"></div>
+      <div id="wrong-overlay"></div>
+      <!-- cells created dynamically by createCells() -->
+      <div id="overlay"><div id="overlay-text"></div></div>
+    </div>
+
+    <div id="ground"></div>
+
+    <div id="ship-row">
+      <div id="ship">🚀</div>
+    </div>
+  </div>
+
+  <div id="instructions">← → MOVE &nbsp;|&nbsp; SPACE SHOOT &nbsp;|&nbsp; CLICK MONSTER TO AIM &amp; FIRE</div>
+
+  <script>
+  // ═══════════════════════════════════════════════════════
+  // ASSET MODE — probe for private SVG assets at startup;
+  // fall back to emoji/CSS if not present.
+  // ═══════════════════════════════════════════════════════
+  let usePrivateAssets = false;
+
+  function probePrivateAssets(done) {
+    const img = new Image();
+    img.onload  = () => { usePrivateAssets = true;  done(); };
+    img.onerror = () => { usePrivateAssets = false; done(); };
+    img.src = 'assets/private/Ship.svg';
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // LEVEL CONFIG
+  // ═══════════════════════════════════════════════════════
+  const LEVELS = {
+    1: { cols: 3, rows: 3, startZ: 3.6, advancePerSec: 0.09, zSpacing: 0.9, penalty: 0.28 },
+  };
+  const MAX_COLS          = 6;
+  const POINTS_PER_COL    = 150;  // new column every 150 points
+  const GAME_W            = 620;
+  function getColW()      { return GAME_W / cfg.cols; }
+
+  // ═══════════════════════════════════════════════════════
+  // PROBLEM GENERATION
+  // ═══════════════════════════════════════════════════════
+  // Problem types (no carrying):
+  //   "ones"  — single digits only:  3 + 4 = 7  (a+b <= 9)
+  //   "tens"  — multiples of 10:    30 + 20 = 50 (a+b <= 90)
+  //   "mixed" — tens + ones digit:  30 + 4 = 34
+  function generateOneProblem(usedAnswers) {
+    let attempts = 0;
+    while (attempts < 300) {
+      attempts++;
+      const type = ['ones', 'tens', 'mixed'][Math.floor(Math.random() * 3)];
+      let a, b;
+
+      if (type === 'ones') {
+        a = Math.floor(Math.random() * 9) + 1;          // 1–9
+        b = Math.floor(Math.random() * (10 - a));        // 0–(9-a), no carry
+      } else if (type === 'tens') {
+        a = (Math.floor(Math.random() * 8) + 1) * 10;   // 10–80
+        b = (Math.floor(Math.random() * (9 - a / 10)) + 1) * 10; // avoids a+b > 90
+      } else {
+        a = (Math.floor(Math.random() * 9) + 1) * 10;   // 10–90
+        b = Math.floor(Math.random() * 10);              // 0–9
+      }
+
+      const answer = a + b;
+      if (!usedAnswers.has(answer) && answer > 0) {
+        const [left, right] = Math.random() < 0.5 ? [a, b] : [b, a];
+        return { question: `${left} + ${right}`, answer };
+      }
+    }
+    return null;
+  }
+
+  function generateProblems(count) {
+    const pool = [];
+    const used = new Set();
+    let attempts = 0;
+    while (pool.length < count && attempts < 5000) {
+      attempts++;
+      const prob = generateOneProblem(used);
+      if (prob) {
+        used.add(prob.answer);
+        pool.push(prob);
+      }
+    }
+    return shuffle(pool);
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // GAME STATE
+  //
+  // columns[c] = array of problem objects, index 0 = current front
+  // colFrontZ[c] = current z-depth of column c's front (index 0) monster
+  //   All columns start at cfg.startZ.
+  //   Each frame: colFrontZ[c] -= cfg.advancePerSec * dt (for non-empty cols)
+  //   On correct blast of col c: colFrontZ[c] += cfg.zSpacing (push back one step)
+  //   On wrong answer: subtract cfg.penalty from ALL non-empty cols
+  // ═══════════════════════════════════════════════════════
+  let cfg, columns, colFrontZ, currentProblem;
+  let score = 0;
+  let highScore = parseInt(localStorage.getItem('mathInvaders_highScore') || '0', 10);
+  let paused, gameOver;
+  let lastTime = null;
+
+  const overlayEl     = document.getElementById('overlay');
+  const overlayTextEl = document.getElementById('overlay-text');
+  const problemTextEl = document.getElementById('problem-text');
+  const scoreEl       = document.getElementById('score');
+  const highScoreEl   = document.getElementById('high-score');
+  const dangerGlow    = document.getElementById('danger-glow');
+  const wrongOverlay  = document.getElementById('wrong-overlay');
+  const alienArea     = document.getElementById('alien-area');
+
+  // Cells keyed by [col][depth] — built dynamically
+  const cells = {};
+
+  function createCells() {
+    // Remove any existing cells
+    alienArea.querySelectorAll('.alien-cell').forEach(el => el.remove());
+    Object.keys(cells).forEach(k => delete cells[k]);
+
+    for (let c = 0; c < cfg.cols; c++) {
+      addCellsForColumn(c);
+    }
+  }
+
+  function addCellsForColumn(c) {
+    cells[c] = {};
+    for (let d = 0; d < cfg.rows; d++) {
+      const el = document.createElement('div');
+      el.className = 'alien-cell';
+      el.dataset.col   = c;
+      el.dataset.depth = d;
+      el.addEventListener('click', () => onCellClick(c));
+      alienArea.appendChild(el);
+      cells[c][d] = el;
+    }
+  }
+
+  // Legacy: wire click on any pre-existing cells (none now, but kept for safety)
+  document.querySelectorAll('.alien-cell').forEach(el => {
+    const c = +el.dataset.col, d = +el.dataset.depth;
+    if (!cells[c]) cells[c] = {};
+    cells[c][d] = el;
+    el.addEventListener('click', () => onCellClick(c));
+  });
+
+  function initGame(levelNum = 1) {
+    cfg = { ...LEVELS[levelNum] };  // mutable copy so cfg.cols can grow
+
+    createCells();
+    const problems = generateProblems(cfg.cols * cfg.rows);
+    columns   = [];
+    colFrontZ = [];
+    for (let c = 0; c < cfg.cols; c++) {
+      columns[c]   = problems.slice(c * cfg.rows, (c + 1) * cfg.rows);
+      colFrontZ[c] = cfg.startZ;
+    }
+
+    paused   = false;
+    gameOver = false;
+    score    = 0;
+
+    overlayEl.classList.remove('visible');
+    updateMonsterDisplay();
+    pickNewProblem();
+    updateHUD();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // INFINITY MODE: refill columns after each correct blast
+  // ═══════════════════════════════════════════════════════
+  function refillColumns() {
+    // Collect all answers currently in any column
+    const usedAnswers = new Set();
+    for (let c = 0; c < cfg.cols; c++) {
+      for (const prob of columns[c]) {
+        usedAnswers.add(prob.answer);
+      }
+    }
+
+    for (let c = 0; c < cfg.cols; c++) {
+      if (columns[c].length < cfg.rows) {
+        const newProb = generateOneProblem(usedAnswers);
+        if (newProb) {
+          usedAnswers.add(newProb.answer);
+          columns[c].push(newProb);
+        }
+      }
+    }
+
+    updateMonsterDisplay();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // COLUMN UPGRADE
+  // ═══════════════════════════════════════════════════════
+  function checkColumnUpgrade() {
+    const targetCols = Math.min(MAX_COLS, 3 + Math.floor(score / POINTS_PER_COL));
+    while (cfg.cols < targetCols) addColumn();
+  }
+
+  function addColumn() {
+    const newCol = cfg.cols;
+    cfg.cols++;
+
+    // Build DOM cells for the new column
+    addCellsForColumn(newCol);
+
+    // Generate fresh problems for it (avoiding all currently-in-use answers)
+    const usedAnswers = new Set();
+    for (let c = 0; c < newCol; c++) {
+      for (const p of columns[c]) usedAnswers.add(p.answer);
+    }
+    columns[newCol] = [];
+    for (let d = 0; d < cfg.rows; d++) {
+      const prob = generateOneProblem(usedAnswers);
+      if (prob) { usedAnswers.add(prob.answer); columns[newCol].push(prob); }
+    }
+
+    // New column starts far away (same as game start)
+    colFrontZ[newCol] = cfg.startZ;
+
+    updateMonsterDisplay();
+    // Keep ship in bounds
+    moveShipTo(Math.min(shipCol, cfg.cols - 1));
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // DISPLAY
+  // ═══════════════════════════════════════════════════════
+  function updateMonsterDisplay() {
+    for (let c = 0; c < cfg.cols; c++) {
+      for (let d = 0; d < cfg.rows; d++) {
+        const cell    = cells[c][d];
+        const problem = columns[c][d];
+        if (problem) {
+          setMonsterDigits(cell, problem.answer);
+          cell.style.visibility = 'visible';
+        } else {
+          cell.innerHTML = '';
+          cell.style.visibility = 'hidden';
+        }
+      }
+    }
+  }
+
+  function setMonsterDigits(cell, answer) {
+    cell.innerHTML = '';
+    if (usePrivateAssets) {
+      for (const d of String(answer)) {
+        const img = document.createElement('img');
+        img.src = `assets/private/Monster-${d}.svg`;
+        img.className = 'monster-digit';
+        cell.appendChild(img);
+      }
+    } else {
+      const div = document.createElement('div');
+      div.className = 'monster-digit monster-digit-text';
+      div.textContent = answer;
+      cell.appendChild(div);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PROBLEM SELECTION
+  //
+  // In infinity mode all queues stay full, so weighting by
+  // length does nothing. Instead weight by *danger*:
+  // lower colFrontZ = closer to ground = higher weight.
+  //
+  // Hard cap: if any column is more than 2 blast-steps
+  // (2 × zSpacing) closer than the others, restrict
+  // selection to only those dangerous columns so the
+  // player is forced to address the threat.
+  // ═══════════════════════════════════════════════════════
+  function pickNewProblem() {
+    const nonEmpty = columns
+      .map((q, i) => ({ col: i, queue: q }))
+      .filter(c => c.queue.length > 0);
+
+    if (nonEmpty.length === 0) return;
+
+    const frontZs = nonEmpty.map(c => colFrontZ[c.col]);
+    const minFZ   = Math.min(...frontZs);
+    const maxFZ   = Math.max(...frontZs);
+
+    // Hard cap: if spread exceeds 2 steps, only pick from the
+    // most-dangerous column(s) until balance is restored.
+    const MAX_GAP = 2 * cfg.zSpacing;
+    const pool = (maxFZ - minFZ > MAX_GAP)
+      ? nonEmpty.filter(c => colFrontZ[c.col] <= minFZ + 0.05)
+      : nonEmpty;
+
+    // Within the pool weight by danger (inverse distance to ground)
+    const weights = pool.map(c => 1 / Math.max(0.01, colFrontZ[c.col] - GAMEOVER_Z));
+    const total   = weights.reduce((s, w) => s + w, 0);
+    let r = Math.random() * total;
+    let chosen = pool[pool.length - 1];
+    for (let i = 0; i < pool.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { chosen = pool[i]; break; }
+    }
+
+    currentProblem = chosen.queue[0];
+    problemTextEl.textContent = `${currentProblem.question} = ?`;
+  }
+
+  function updateHUD() {
+    scoreEl.textContent = score;
+    highScoreEl.textContent = highScore;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SHOT HANDLING
+  // ═══════════════════════════════════════════════════════
+  function handleShot(col) {
+    if (paused || gameOver || !currentProblem) return;
+
+    const frontProblem = columns[col]?.[0];
+    if (!frontProblem) return;
+
+    if (frontProblem === currentProblem) {
+      // Correct
+      paused = true;
+      flashProblem('correct');
+      score += 10;
+      updateHUD();
+      checkColumnUpgrade();
+
+      explodeCell(col, () => {
+        // Remove front of this column's queue.
+        // Push that column back one step so remaining monsters stay
+        // at their current visual depth — they do NOT jump toward the player.
+        columns[col].shift();
+        colFrontZ[col] += cfg.zSpacing;
+
+        refillColumns();
+        pickNewProblem();
+        paused = false;
+      });
+
+    } else {
+      // Wrong — penalty advance on ALL non-empty columns
+      flashProblem('wrong');
+      wrongOverlay.classList.add('flash');
+      setTimeout(() => wrongOverlay.classList.remove('flash'), 200);
+      shakeScreen();
+
+      for (let c = 0; c < cfg.cols; c++) {
+        if (columns[c].length > 0) {
+          colFrontZ[c] = Math.max(GAMEOVER_Z + 0.05, colFrontZ[c] - cfg.penalty);
+        }
+      }
+    }
+  }
+
+  function flashProblem(type) {
+    problemTextEl.classList.add(`${type}-flash`);
+    setTimeout(() => problemTextEl.classList.remove(`${type}-flash`), 350);
+  }
+
+  function handleGameOver() {
+    gameOver = true;
+
+    const isNewBest = score > highScore;
+    if (isNewBest) {
+      highScore = score;
+      localStorage.setItem('mathInvaders_highScore', highScore);
+      updateHUD();
+    }
+
+    if (isNewBest) {
+      overlayTextEl.innerHTML =
+        `<span style="color:#ffd700;text-shadow:0 0 20px #ffaa00,0 0 50px #ff8800,0 0 80px #ff6600;font-size:60px;display:block;margin-bottom:12px;">NEW BEST!</span>` +
+        `<span style="color:#ffe066;text-shadow:0 0 16px #ffcc00,0 0 32px #ffaa00;font-size:72px;font-weight:bold;">${score}</span>`;
+    } else {
+      overlayTextEl.innerHTML =
+        `<span style="color:#ff2200;text-shadow:0 0 16px #ff2200,0 0 36px #ff0000;font-size:52px;display:block;margin-bottom:16px;letter-spacing:6px;">GAME OVER</span>` +
+        `<span style="font-size:22px;color:#aaa;letter-spacing:2px;display:block;margin-bottom:4px;">SCORE &nbsp;<span style="color:#fff;font-size:36px;font-weight:bold;text-shadow:0 0 12px #fff8;">${score}</span></span>` +
+        `<span style="font-size:22px;color:#aaa;letter-spacing:2px;display:block;">BEST &nbsp;&nbsp;<span style="color:#ffd700;font-size:36px;font-weight:bold;text-shadow:0 0 12px #ffd70088;">${highScore}</span></span>`;
+    }
+
+    overlayTextEl.style.color      = '';
+    overlayTextEl.style.textShadow = '';
+    overlayEl.classList.add('visible');
+    setTimeout(() => { initGame(1); showStartScreen(); gameStarted = false; paused = true; }, 3500);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // EXPLOSION + SCORE POPUP
+  // ═══════════════════════════════════════════════════════
+  function explodeCell(col, onDone) {
+    const gameEl   = document.getElementById('game');
+    const gameRect = gameEl.getBoundingClientRect();
+    const cell     = cells[col][0]; // front cell of this column
+
+    shakeScreen();
+    cell.classList.add('exploding');
+
+    const cr = cell.getBoundingClientRect();
+    const cx = cr.left + cr.width  / 2 - gameRect.left;
+    const cy = cr.top  + cr.height / 2 - gameRect.top;
+
+    // Score popup
+    const popup = document.createElement('div');
+    popup.className = 'score-popup';
+    popup.textContent = '+10';
+    const popupTopPx = (cr.top - gameRect.top) + 'px';
+    popup.style.setProperty('--start-top', popupTopPx);
+    popup.style.left = (cr.left + cr.width / 2 - gameRect.left) + 'px';
+    popup.style.top  = popupTopPx;
+    gameEl.appendChild(popup);
+    popup.addEventListener('animationend', () => popup.remove());
+    setTimeout(() => popup.remove(), 1200);
+
+    const boom = usePrivateAssets ? document.createElement('img') : document.createElement('div');
+    if (usePrivateAssets) boom.src = 'assets/private/Blasted.svg';
+    else boom.textContent = '💥';
+    boom.className = 'blast-explosion';
+    boom.style.left = cx + 'px';
+    boom.style.top  = cy + 'px';
+    gameEl.appendChild(boom);
+
+    let doneFired = false;
+    function finish() {
+      if (doneFired) return;
+      doneFired = true;
+      boom.remove();
+      cell.classList.remove('exploding');
+      if (onDone) onDone();
+    }
+    boom.addEventListener('animationend', finish);
+    setTimeout(finish, 600); // fallback: fire if animationend never arrives
+  }
+
+  function shakeScreen() {
+    const gameEl = document.getElementById('game');
+    gameEl.classList.add('screen-shake');
+    setTimeout(() => gameEl.classList.remove('screen-shake'), 180);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // STARFIELD
+  // ═══════════════════════════════════════════════════════
+  const canvas = document.getElementById('stars');
+  const ctx    = canvas.getContext('2d');
+  function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  const stars = Array.from({ length: 90 }, () => ({
+    x: Math.random(), y: Math.random() * 0.52,
+    r: Math.random() * 1.4 + 0.3,
+    phase: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.025 + 0.006,
+  }));
+
+  function drawStars() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const s of stars) {
+      s.phase += s.speed;
+      const alpha = 0.3 + 0.6 * Math.abs(Math.sin(s.phase));
+      ctx.beginPath();
+      ctx.arc(s.x * canvas.width, s.y * canvas.height, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,220,190,${alpha})`;
+      ctx.fill();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PERSPECTIVE POSITIONING
+  //
+  // cellZ(c, d) = colFrontZ[c] + d * zSpacing
+  //   z=1 → at ground (game over boundary)
+  //   z>1 → farther away (smaller, higher on screen)
+  //
+  // screen: top = (H - BASE_H) / z
+  //         monsterHeight = BASE_H / z
+  // ═══════════════════════════════════════════════════════
+  const BASE_H     = 96;
+  const GAMEOVER_Z = 1.0;
+  const DANGER_Z   = 1.6;
+
+  function cellZ(col, depth) {
+    return colFrontZ[col] + depth * cfg.zSpacing;
+  }
+
+  function updateCellPositions() {
+    const H = alienArea.offsetHeight;
+
+    for (let c = 0; c < cfg.cols; c++) {
+      const colCenterX = getColW() * c + getColW() / 2;
+
+      for (let d = 0; d < cfg.rows; d++) {
+        const cell = cells[c][d];
+        const z    = cellZ(c, d);
+
+        if (!columns[c][d] || z > 12) {
+          cell.style.visibility = 'hidden';
+          continue;
+        }
+
+        const monH    = BASE_H / z;
+        const cellTop = (H - BASE_H) / z;
+        const opacity = d === 0 ? 1 : Math.min(0.7, Math.max(0.2, 1.4 / z));
+
+        cell.style.left       = colCenterX + 'px';
+        cell.style.top        = cellTop + 'px';
+        cell.style.opacity    = opacity;
+        cell.style.visibility = 'visible';
+
+        for (const el of cell.querySelectorAll('.monster-digit')) {
+          if (el.tagName === 'IMG') {
+            el.style.height = monH + 'px';
+          } else {
+            el.style.fontSize = monH + 'px';
+          }
+        }
+      }
+    }
+
+    // Danger glow — based on min colFrontZ across non-empty columns
+    const nonEmptyFrontZs = columns
+      .map((q, c) => q.length > 0 ? colFrontZ[c] : null)
+      .filter(z => z !== null);
+
+    if (nonEmptyFrontZs.length > 0) {
+      const minZ = Math.min(...nonEmptyFrontZs);
+      if (minZ < DANGER_Z) {
+        const t     = 1 - (minZ - GAMEOVER_Z) / (DANGER_Z - GAMEOVER_Z);
+        const alpha = Math.max(0, Math.min(0.6, t * 0.65));
+        dangerGlow.style.background =
+          `linear-gradient(to bottom, transparent, rgba(255,0,0,${alpha}))`;
+      } else {
+        dangerGlow.style.background = '';
+      }
+    } else {
+      dangerGlow.style.background = '';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // MAIN LOOP
+  // ═══════════════════════════════════════════════════════
+  function loop(timestamp) {
+    requestAnimationFrame(loop);
+    drawStars();
+
+    if (lastTime === null) lastTime = timestamp;
+    const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+    lastTime = timestamp;
+
+    if (!paused && !gameOver) {
+      let gameOverTriggered = false;
+      for (let c = 0; c < cfg.cols; c++) {
+        if (columns[c].length > 0) {
+          colFrontZ[c] -= cfg.advancePerSec * dt;
+          if (colFrontZ[c] <= GAMEOVER_Z) {
+            colFrontZ[c] = GAMEOVER_Z;
+            gameOverTriggered = true;
+          }
+        }
+      }
+      if (gameOverTriggered) {
+        handleGameOver();
+      }
+    }
+
+    updateCellPositions();
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SHIP & INPUT
+  // ═══════════════════════════════════════════════════════
+  const shipEl  = document.getElementById('ship');
+  let   shipCol = 1;
+
+  function moveShipTo(col) {
+    shipCol = col;
+    shipEl.style.left = (getColW() * col + getColW() / 2) + 'px';
+  }
+  let blastSide  = 'Left';
+  let isBlasting = false;
+
+  function fireBlast() {
+    if (isBlasting || gameOver) return;
+    isBlasting = true;
+
+    const gameEl    = document.getElementById('game');
+    const gameRect  = gameEl.getBoundingClientRect();
+    const shipRect  = shipEl.getBoundingClientRect();
+
+    // Capture column at fire time — not at arrival time,
+    // so moving the ship mid-flight doesn't retarget the blast.
+    const firedAtCol = shipCol;
+    const targetCell = cells[firedAtCol][0];
+    const targetRect = targetCell.getBoundingClientRect();
+
+    const xOff   = blastSide === 'Left' ? -9 : 9;
+    const blastX = (shipRect.left + shipRect.width / 2 - gameRect.left) + xOff;
+    const startY = shipRect.top - gameRect.top;
+    const endY   = targetRect.bottom - gameRect.top;
+
+    const blast = usePrivateAssets ? document.createElement('img') : document.createElement('div');
+    if (usePrivateAssets) blast.src = `assets/private/Blast-${blastSide}.svg`;
+    blast.className = 'blast-projectile';
+    blast.style.left = blastX + 'px';
+    blast.style.top  = startY + 'px';
+    gameEl.appendChild(blast);
+
+    const travelDist = startY - endY;
+
+    blast.animate([
+      { transform: 'translateX(-50%) translateY(0)' },
+      { transform: `translateX(-50%) translateY(-${travelDist}px)` },
+    ], { duration: 200, easing: 'linear' }).onfinish = () => {
+      blast.remove();
+      handleShot(firedAtCol);
+      isBlasting = false;
+    };
+
+    blastSide = blastSide === 'Left' ? 'Right' : 'Left';
+  }
+
+  function onCellClick(col) {
+    if (!gameStarted) { startGame(); return; }
+    if (shipCol === col) fireBlast();
+    else moveShipTo(col);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (!gameStarted) {
+      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); startGame(); }
+      return;
+    }
+    if (e.key === 'ArrowLeft')  moveShipTo(Math.max(0, shipCol - 1));
+    if (e.key === 'ArrowRight') moveShipTo(Math.min(cfg.cols - 1, shipCol + 1));
+    if (e.key === ' ') { e.preventDefault(); fireBlast(); }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // START SCREEN
+  // ═══════════════════════════════════════════════════════
+  let gameStarted = false;
+
+  function showStartScreen() {
+    document.getElementById('problem-bar').style.visibility = 'hidden';
+    overlayTextEl.innerHTML =
+      'MATH<br>INVADERS<br><span style="font-size:22px;letter-spacing:2px;color:#ffb87a;text-shadow:0 0 10px #f84">PRESS SPACE TO START</span>';
+    overlayTextEl.style.color      = '#fff';
+    overlayTextEl.style.textShadow = '0 0 20px #ff8833, 0 0 40px #ff4400';
+    overlayEl.classList.add('visible');
+  }
+
+  function startGame() {
+    gameStarted = true;
+    overlayEl.classList.remove('visible');
+    document.getElementById('problem-bar').style.visibility = 'visible';
+    paused = false;
+  }
+
+  probePrivateAssets(() => {
+    const shipEl = document.getElementById('ship');
+    if (usePrivateAssets) {
+      shipEl.innerHTML = '';
+      shipEl.classList.add('ship-svg');
+      const img = document.createElement('img');
+      img.src = 'assets/private/Ship.svg';
+      img.alt = 'ship';
+      img.style.height = '88px';
+      img.style.width  = 'auto';
+      shipEl.appendChild(img);
+    } else {
+      shipEl.classList.add('ship-emoji');
+    }
+
+    initGame(1);
+    moveShipTo(1);
+    updateHUD();
+    paused = true;   // hold approach until player starts
+    showStartScreen();
+    requestAnimationFrame(loop);
+  });
+  </script>
+
+</body>
+</html>
